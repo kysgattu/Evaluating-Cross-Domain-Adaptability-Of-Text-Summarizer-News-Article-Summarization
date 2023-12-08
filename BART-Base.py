@@ -170,7 +170,7 @@ for epoch in range(2):  # Change the number of epochs as needed
     train_loss = total_loss / len(train_dataloader)
     print(f"Epoch {epoch+1}/{2}, Train Loss: {train_loss:.4f}")
 # Save the model after training
-model.save_pretrained("saved_model")
+model.save_pretrained("KYS_BART_LXSUM")
 def evaluate(model, dataloader):
     model.eval()
     test_articles = []
