@@ -449,8 +449,10 @@ for epoch in range(3):
 sameCategoryData = evalResult
 
 # Save the model
-model.save_pretrained("KYS_BART_BASE")
-# model.save_pretrained("TEST")
+# model.save_pretrained("KYS_BART_BASE")
+model.save_pretrained("TEST_BASE")
+# tokenizer.save_pretrained("KYS_BART_BASE")
+tokenizer.save_pretrained("TEST_BASE")
 
 print(train_losses)
 print(rouge_scores)
