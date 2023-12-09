@@ -48,6 +48,7 @@ def expand_contractions(text, contraction_map=None):
     expanded_text = re.sub("'", "", expanded_text)
     return expanded_text
 
+
 def detect_encoding(file_path):
     """
     Purpose:
@@ -66,7 +67,7 @@ def detect_encoding(file_path):
 # Read individual File of News articles of each class and load them into respective Dataframes
 print("Loading Data....")
 base_dir = "data/BBCNewsSummary/News Articles"
-output_dir = "data/BBCNewsSummaryCSV"  # Output directory
+output_dir = "data/BBCNewsSummaryCSV"
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
@@ -120,7 +121,7 @@ politics = dfs['politics']
 tech = dfs['tech']
 
 sample_text = business['newsarticle'][242]
-sample_text
+print(sample_text)
 
 # entertainment = pd.read_csv('data/BBCNewsSummaryCSV/entertainment_data.csv')
 # sport = pd.read_csv('data/BBCNewsSummaryCSV/sport_data.csv')
@@ -142,8 +143,10 @@ print("Preprocessing Data...")
 training_dataset = training_dataset.sample(frac=1).reset_index(drop=True)
 testing_dataset = testing_dataset.sample(frac=1).reset_index(drop=True)
 
+# Apply contraction expansion to news articles in both datasets
 training_dataset['newsarticle'] = training_dataset['newsarticle'].apply(expand_contractions)
 testing_dataset['newsarticle'] = testing_dataset['newsarticle'].apply(expand_contractions)
+
 
 def getSenLen(sentence):
     """
@@ -157,6 +160,7 @@ def getSenLen(sentence):
     - int: The length of the sentence in words.
     """
     return len(sentence.split())
+
 
 # Apply the getSenLen function to calculate article and summary lengths
 training_dataset['article_length'] = training_dataset['newsarticle'].apply(getSenLen)
@@ -177,17 +181,21 @@ axes[0].set_title("Boxplot of Article Lengths")
 sns.boxplot(training_dataset["summary_length"], ax=axes[1])
 axes[1].set_ylabel("Number of Words")
 axes[1].set_title("Boxplot of Summary Lengths")
+plt.ion()
+plt.show()
 
 print(training_dataset.describe())
 
 # Get statistics for the articles boxplot
 lines_articles = axes[0].lines[:6]
 articles_stats = [line.get_ydata()[0] for line in lines_articles]
+# print(articles_stats)
 Q1_articles, Q3_articles, lower_whisker_articles, upper_whisker_articles, median_articles = articles_stats[:5]
 
 # Get statistics for the summaries boxplot
 lines_summaries = axes[1].lines[:6]
 summaries_stats = [line.get_ydata()[0] for line in lines_summaries]
+# print(summaries_stats)
 Q1_summaries, Q3_summaries, lower_whisker_summaries, upper_whisker_summaries, median_summaries = summaries_stats[:5]
 
 #Alternate Approach for getting UpperWhiskers
@@ -219,12 +227,15 @@ axes[0].set_title("Boxplot of Article Lengths")
 sns.boxplot(training_dataset["summary_length"], ax=axes[1])
 axes[1].set_ylabel("Number of Words")
 axes[1].set_title("Boxplot of Summary Lengths")
+plt.ion()
+plt.show()
 
 print(training_dataset.head())
 print(training_dataset.describe())
 
-df = training_dataset[0:10]
-# df = training_dataset
+# df = training_dataset[0:10]
+df = training_dataset
+
 
 # Determine the available device (CPU, GPU, or MPS)
 if torch.backends.mps.is_available():
@@ -239,7 +250,7 @@ device = torch.device(arch)
 print(f"Device Set to {arch}")
 
 # Tokenize and preprocess the text data
-tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-xsum')
+tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-xsum')  # Initialize BART tokenizer
 max_length = 512  # Maximum sequence length
 print("Loaded Tokeniser")
 
@@ -255,7 +266,8 @@ def tokenize_text(text):
     - torch.Tensor: Tokenized input text as a PyTorch tensor.
     """
     inputs = tokenizer.encode("summarize: " + text, return_tensors="pt", max_length=512, truncation=True, padding='max_length', return_attention_mask=True)
-    return inputs.to(device)  # Move the tokenized inputs to the GPU
+    return inputs.to(device)
+
 
 def tokenize_summary(text):
     """
@@ -269,7 +281,8 @@ def tokenize_summary(text):
     - torch.Tensor: Tokenized input summary as a PyTorch tensor.
     """
     inputs = tokenizer.encode(text, return_tensors="pt", max_length=280, truncation=True, padding='max_length', return_attention_mask=True)
-    return inputs.to(device)  # Move the tokenized summaries to the GPU
+    return inputs.to(device)
+
 
 def tokenize_and_stack(df, text_column, summary_column):
     """
@@ -298,6 +311,7 @@ def tokenize_and_stack(df, text_column, summary_column):
     
     return X, Y, dataloader
 
+
 train_df, val_df = train_test_split(df, test_size=0.2, random_state=42)
 test_df = testing_dataset[0:len(val_df)]
 
@@ -306,6 +320,7 @@ print("Tokenising and Stacking datasets..")
 X_train, Y_train, train_dataloader = tokenize_and_stack(train_df, 'newsarticle', 'summary')
 X_val, Y_val, val_dataloader = tokenize_and_stack(val_df, 'newsarticle', 'summary')
 X_test, Y_test, test_dataloader = tokenize_and_stack(test_df, 'newsarticle', 'summary')
+
 
 def genSummaryAndEvaluate(model, dataloader):
     """
@@ -335,13 +350,13 @@ def genSummaryAndEvaluate(model, dataloader):
     # Disable gradient computation during evaluation
     with torch.no_grad():
         # Iterate through the validation dataloader
-        for batch in tqdm(dataloader, desc="Evaluating Test"):
+        for batch in tqdm(dataloader, desc="Evaluating Model"):
             inputs = batch[0].to(device)
             attention_mask = (inputs != 0).float().to(device)
             targets = batch[1].to(device)
-            max_length=280  # Maximum length for generated summaries
+            max_length = 280  # Maximum length for generated summaries
             # Generate summaries using the model
-            outputs = model.generate(input_ids=inputs, attention_mask=attention_mask, max_length=max_length, num_beams=17, length_penalty=2.0, early_stopping=False)
+            outputs = model.generate(input_ids=inputs, attention_mask=attention_mask, max_length=280, num_beams=17, length_penalty=2.0, early_stopping=False)
             
             for output, target, input_text in zip(outputs, targets, inputs):
                 #  ROUGE-1 precision
@@ -360,6 +375,7 @@ def genSummaryAndEvaluate(model, dataloader):
                 actual_summaries.append(target_text)
                 predicted_summaries.append(output_text)
 
+    # Evaluation Results
     data = {
         'Article': test_articles,
         'Actual Summary': actual_summaries,
@@ -370,6 +386,7 @@ def genSummaryAndEvaluate(model, dataloader):
     }
     results_df = pd.DataFrame(data)
     return results_df
+
 
 # Load the pre-trained BART model
 model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-xsum')
@@ -411,6 +428,7 @@ for epoch in range(3):
         # Update gradients and optimizer once every accumulation_steps
         if (step + 1) % accumulation_steps == 0:
             clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping to prevent exploding gradients
+            # Update model parameters using the optimizer and # Reset gradients in the optimizer
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
@@ -430,9 +448,9 @@ for epoch in range(3):
 
 sameCategoryData = evalResult
 
-# Save the model after training
-# model.save_pretrained("KYS_BART_LXSUM")
-model.save_pretrained("TEST")
+# Save the model
+model.save_pretrained("KYS_BART_LXSUM")
+# model.save_pretrained("TEST")
 
 print(train_losses)
 print(train_losses)
@@ -536,8 +554,6 @@ ax.legend()
 
 plt.show()
 
-
-import matplotlib.pyplot as plt
 
 # Calculate mean values
 sameCat_mean_rouge = np.mean(sameCategoryData['ROUGE-1 Precision'])

@@ -227,12 +227,14 @@ axes[0].set_title("Boxplot of Article Lengths")
 sns.boxplot(training_dataset["summary_length"], ax=axes[1])
 axes[1].set_ylabel("Number of Words")
 axes[1].set_title("Boxplot of Summary Lengths")
+plt.ion()
+plt.show()
 
 print(training_dataset.head())
 print(training_dataset.describe())
 
-df = training_dataset[0:10]
-# df = training_dataset
+# df = training_dataset[0:10]
+df = training_dataset
 
 
 # Determine the available device (CPU, GPU, or MPS)
@@ -447,8 +449,8 @@ for epoch in range(3):
 sameCategoryData = evalResult
 
 # Save the model
-# model.save_pretrained("KYS_BART_BASE")
-model.save_pretrained("TEST")
+model.save_pretrained("KYS_BART_BASE")
+# model.save_pretrained("TEST")
 
 print(train_losses)
 print(rouge_scores)
