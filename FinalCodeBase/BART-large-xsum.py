@@ -135,8 +135,8 @@ print(sample_text)
 training_dataset = pd.concat([business,politics,tech], ignore_index=True)
 testing_dataset = pd.concat([entertainment,sport], ignore_index=True)
 
-print("Training size:",training_dataset.size)
-print("Testing size:",testing_dataset.size)
+print("Training size:",len(training_dataset))
+print("Testing size:",len(testing_dataset))
 
 print("Preprocessing Data...")
 # Shuffle the training and testing datasets

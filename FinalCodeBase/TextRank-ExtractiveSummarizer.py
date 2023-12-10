@@ -3,17 +3,28 @@
 
 import re
 import os
-
-import pandas as pd
 import chardet
+import numpy as np
+import pandas as pd
+
 import nltk
 import textwrap
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize,sent_tokenize
 nltk.download("stopwords")
 nltk.download("punkt")
 from contractions import contractions_dict
 from sklearn.model_selection import train_test_split
+
+from nltk.tokenize import sent_tokenize
+from nltk.corpus import stopwords
+from gensim.models import Word2Vec
+from scipy import spatial
+import networkx as nx
+
+from rouge_score import rouge_scorer
+from bert_score import score as bert_score
+
+import warnings
+warnings.filterwarnings("ignore")
 
 def expand_contractions(text, contraction_map=None):
     if contraction_map is None:
@@ -74,7 +85,6 @@ for class_name in classes:
                     open(summary_file_path, 'r', encoding=summary_encoding) as summary_file:
                 news_content = news_file.read()
                 summary_content = summary_file.read()
-                
 
                 # Extract file name without extension
                 file_name_without_extension = os.path.splitext(filename)[0]
@@ -93,7 +103,6 @@ for class_name in classes:
     # Save dataframe to the dictionary
     dfs[class_name] = df
 
-
     # # Write dataframe to CSV in the output directory
     # csv_filename = os.path.join(output_dir, f'{class_name}_data.csv')
     # df.to_csv(csv_filename, index=False)
@@ -105,77 +114,70 @@ sport = dfs['sport']
 politics = dfs['politics']
 tech = dfs['tech']
 
-sample_text = business['newsarticle'][242]
+sample_text = business['newsarticle'][242] 
+
 print(sample_text)
 
-# entertainment = pd.read_csv('data/BBCNewsSummaryCSV/entertainment_data.csv') 
+# entertainment = pd.read_csv('data/BBCNewsSummaryCSV/entertainment_data.csv')
 # sport = pd.read_csv('data/BBCNewsSummaryCSV/sport_data.csv')
 # tech = pd.read_csv('data/BBCNewsSummaryCSV/tech_data.csv')
 # business = pd.read_csv('data/BBCNewsSummaryCSV/business_data.csv')
 # politics = pd.read_csv('data/BBCNewsSummaryCSV/politics_data.csv')
 
-training_dataset = pd.concat([business,politics,tech], ignore_index=True)
-testing_dataset = pd.concat([entertainment,sport], ignore_index=True)
+domain1 = pd.concat([business,tech], ignore_index=True)
+domain2 = pd.concat([entertainment,politics], ignore_index=True)
 
-print("Training size:",training_dataset.size)
-print("Testing size:",testing_dataset.size)
+# domain1 = domain1[0:10]
+# domain2 = domain2[0:10]
 
-training_dataset = training_dataset.sample(frac=1).reset_index(drop=True)
-testing_dataset = testing_dataset.sample(frac=1).reset_index(drop=True)
+print("Training size:",len(domain1))
+print("Testing size:",len(domain2))
 
-training_dataset['newsarticle'] = training_dataset['newsarticle'].apply(expand_contractions)
-testing_dataset['newsarticle'] = testing_dataset['newsarticle'].apply(expand_contractions)
+domain1 = domain1.sample(frac=1).reset_index(drop=True)
+domain2 = domain2.sample(frac=1).reset_index(drop=True)
 
-stop_words = stopwords.words("english")
+domain1['newsarticle'] = domain1['newsarticle'].apply(expand_contractions)
+domain2['newsarticle'] = domain2['newsarticle'].apply(expand_contractions)
 
 def wrap(x):
     return textwrap.fill(x,replace_whitespace=False,fix_sentence_endings=True)
 
-import numpy as np
-import pandas as pd
-import nltk
-import re
-from nltk.tokenize import sent_tokenize
-from nltk.corpus import stopwords
-from gensim.models import Word2Vec
-from scipy import spatial
-import networkx as nx
+stop_words = stopwords.words("english")
 
 def textRank(text):
+    # Tokenize sentences
     sentences=sent_tokenize(text)
+    # Clean and lowercase sentences
     sentences_clean=[re.sub(r'[^\w\s]','',sentence.lower()) for sentence in sentences]
+     # Remove stopwords
     stop_words = stopwords.words('english')
     sentence_tokens=[[words for words in sentence.split(' ') if words not in stop_words] for sentence in sentences_clean]
+    # Create Word2Vec model
     w2v=Word2Vec(sentence_tokens,vector_size=1,min_count=1,epochs=1000)
+    # Get sentence embeddings
     sentence_embeddings=[[w2v.wv[word][0] for word in words] for words in sentence_tokens]
+    # Pad embeddings to the maximum sentence length
     max_len=max([len(tokens) for tokens in sentence_tokens])
+    # Calculate similarity matrix
     sentence_embeddings=[np.pad(embedding,(0,max_len-len(embedding)),'constant') for embedding in sentence_embeddings]
     similarity_matrix = np.zeros([len(sentence_tokens), len(sentence_tokens)])
     for i,row_embedding in enumerate(sentence_embeddings):
         for j,column_embedding in enumerate(sentence_embeddings):
             similarity_matrix[i][j]=1-spatial.distance.cosine(row_embedding,column_embedding)
+    # Create a graph from the similarity matrix
     nx_graph = nx.from_numpy_array(similarity_matrix)
-    scores = nx.pagerank(nx_graph)
+    # Apply PageRank algorithm
+    scores = nx.pagerank(nx_graph, max_iter = 600)
+    # Get top-ranked sentences
     top_sentence={sentence:scores[index] for index,sentence in enumerate(sentences)}
     top=dict(sorted(top_sentence.items(), key=lambda x: x[1], reverse=True)[:4])
+    # Generate the summary
     summary = ''
     for sent in sentences:
         if sent in top.keys():
             summary = summary+sent
             # print(summary)
     return summary
-
-textRank(training_dataset['newsarticle'][1])
-
-train_df, val_df = train_test_split(training_dataset, test_size=0.2, random_state=42)
-test_df = testing_dataset[0:len(val_df)]
-
-# testing_dataset = [0:10]
-
-import pandas as pd
-from rouge_score import rouge_scorer
-from bert_score import score as bert_score
-
 
 # Function to apply summarizer and calculate scores for each row
 def tr_summarize(row):
@@ -198,52 +200,132 @@ def tr_summarize(row):
         'bert_score': bert_f1.item()
     })
 
-# Apply the process_row function to each row in the DataFrame
-result_df = test_df.apply(tr_summarize, axis=1)
 
-# Concatenate the result_df with the original DataFrame
-tr_result_dataset = pd.concat([test_df, result_df], axis=1)
+textRank(domain1['newsarticle'][1])
 
-# Print the updated DataFrame
-# print(testing_dataset)
+textRank(domain2['newsarticle'][1])
 
-print(tr_result_dataset.head())
-tr_result_dataset['predicted_summary'][0]
+# Apply the process_row function to each row in the DataFrame and concatenate the result_df with the original DataFrame
+trOnDomain1 = pd.concat([domain1, domain1.apply(tr_summarize, axis=1)], axis=1)
 
+trOnDomain2 = pd.concat([domain2, domain2.apply(tr_summarize, axis=1)], axis=1)
+
+trOnDomain1.head()
+
+trOnDomain2.head()
 
 import matplotlib.pyplot as plt
-
 # Calculate mean values
-textRank_mean_rouge = np.mean(tr_result_dataset['rouge1_precision'])
-textRank_mean_bert = np.mean(tr_result_dataset['bert_score'])
-
-
+sameCat_mean_rouge = np.mean(trOnDomain1['rouge1_precision'])
+sameCat_mean_bert = np.mean(trOnDomain1['bert_score'])
 # Create separate histogram plots for Rouge and BERT Scores
 plt.figure(figsize=(12, 6))
 # plt.title('Same Category Data')
 
 # Rouge Score Histogram
 plt.subplot(1, 2, 1)
-plt.hist(tr_result_dataset['rouge1_precision'], bins=15, color='#1f77b4')
-plt.axvline(textRank_mean_rouge, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {textRank_mean_rouge:.3f}')
-plt.title('Same Category Data Rouge Score Histogram')
+plt.hist(trOnDomain1['rouge1_precision'], bins=15, color='#1f77b4')
+plt.axvline(sameCat_mean_rouge, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {sameCat_mean_rouge:.3f}')
+plt.title('Domain1 Data Rouge Score Histogram')
 plt.xlabel('Rouge Score')
 plt.ylabel('Frequency')
 
 # BERT Score Histogram
 plt.subplot(1, 2, 2)
-plt.hist(tr_result_dataset['bert_score'], bins=15, color='darkorange')
-plt.axvline(textRank_mean_bert, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {textRank_mean_bert:.3f}')
-plt.title('Same Category Data BERT Score Histogram')
+plt.hist(trOnDomain1['bert_score'], bins=15, color='darkorange')
+plt.axvline(sameCat_mean_bert, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {sameCat_mean_bert:.3f}')
+plt.title('Domain1 Data BERT Score Histogram')
+plt.xlabel('BERT Score')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.show()
+
+import matplotlib.pyplot as plt
+
+# Calculate mean values
+sameCat_mean_rouge = np.mean(trOnDomain2['rouge1_precision'])
+sameCat_mean_bert = np.mean(trOnDomain2['bert_score'])
+# Create separate histogram plots for Rouge and BERT Scores
+plt.figure(figsize=(12, 6))
+# plt.title('Same Category Data')
+
+# Rouge Score Histogram
+plt.subplot(1, 2, 1)
+plt.hist(trOnDomain2['rouge1_precision'], bins=15, color='#1f77b4')
+plt.axvline(sameCat_mean_rouge, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {sameCat_mean_rouge:.3f}')
+plt.title('Domain2 Data Rouge Score Histogram')
+plt.xlabel('Rouge Score')
+plt.ylabel('Frequency')
+
+# BERT Score Histogram
+plt.subplot(1, 2, 2)
+plt.hist(trOnDomain2['bert_score'], bins=15, color='darkorange')
+plt.axvline(sameCat_mean_bert, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {sameCat_mean_bert:.3f}')
+plt.title('Domain2 Data BERT Score Histogram')
 plt.xlabel('BERT Score')
 plt.ylabel('Frequency')
 
-# Adjust layout
 plt.tight_layout()
 
-# Show the plot
+plt.show()
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+same_category_mean_rouge1 = trOnDomain1['rouge1_precision'].mean()
+same_category_mean_bert = trOnDomain1['bert_score'].mean()
+
+diff_category_mean_rouge1 = trOnDomain2['rouge1_precision'].mean()
+diff_category_mean_bert = trOnDomain2['bert_score'].mean()
+
+categories = ['rouge1_precision', 'bert_score']
+mean_scores_same_category = [same_category_mean_rouge1, same_category_mean_bert]
+mean_scores_diff_category = [diff_category_mean_rouge1, diff_category_mean_bert]
+
+bar_width = 0.35
+index = np.arange(len(categories))
+
+fig, ax = plt.subplots()
+bar1 = ax.bar(index, mean_scores_same_category, bar_width, label='Same Category')
+bar2 = ax.bar(index + bar_width, mean_scores_diff_category, bar_width, label='Different Category')
+
+ax.set_xlabel('Metrics')
+ax.set_ylabel('Mean Score')
+ax.set_title('Mean rouge1_precision and bert_score Comparison between Categories')
+ax.set_xticks(index + bar_width / 2)
+ax.set_xticklabels(categories)
+ax.legend()
+
 plt.show()
 
 
-# get_ipython().system('jupyter nbconvert --to script TextRank-ExtractiveSummarizer.ipynb')
+import matplotlib.pyplot as plt
+import numpy as np
 
+same_category_median_rouge1 = trOnDomain1['rouge1_precision'].median()
+same_category_median_bert = trOnDomain1['bert_score'].median()
+
+diff_category_median_rouge1 = trOnDomain2['rouge1_precision'].median()
+diff_category_median_bert = trOnDomain2['bert_score'].median()
+
+categories = ['rouge1_precision', 'bert_score']
+median_scores_same_category = [same_category_median_rouge1, same_category_median_bert]
+median_scores_diff_category = [diff_category_median_rouge1, diff_category_median_bert]
+
+bar_width = 0.35
+index = np.arange(len(categories))
+
+fig, ax = plt.subplots()
+bar1 = ax.bar(index, median_scores_same_category, bar_width, label='Same Category')
+bar2 = ax.bar(index + bar_width, median_scores_diff_category, bar_width, label='Different Category')
+
+ax.set_xlabel('Metrics')
+ax.set_ylabel('median Score')
+ax.set_title('median rouge1_precision and bert_score Comparison between Categories')
+ax.set_xticks(index + bar_width / 2)
+ax.set_xticklabels(categories)
+ax.legend()
+
+plt.show()
+
+# get_ipython().system('jupyter nbconvert --to script TextRank-ExtractiveSummarizer.ipynb')
